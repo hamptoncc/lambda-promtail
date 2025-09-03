@@ -7,6 +7,7 @@ data "aws_region" "current" {}
 resource "aws_iam_role" "this" {
   name               = var.name
   assume_role_policy = data.aws_iam_policy_document.assume_role.json
+  tags               = var.common_tags
 }
 
 data "aws_iam_policy_document" "assume_role" {
@@ -176,6 +177,8 @@ resource "aws_iam_role_policy" "lambda_credentials" {
   name   = "credentials"
   role   = aws_iam_role.this.name
   policy = data.aws_iam_policy_document.lambda_credentials[0].json
+
+  depends_on = [var.depends_on_resources]
 }
 
 #-------------------------------------------------------------------------------
@@ -185,11 +188,12 @@ resource "aws_iam_role_policy" "lambda_credentials" {
 resource "aws_cloudwatch_log_group" "this" {
   name              = "/aws/lambda/${var.name}"
   retention_in_days = 14
+  tags              = var.common_tags
 }
 
 locals {
-  binary_path  = "${path.module}/lambda-promtail/bootstrap"
-  archive_path = "${path.module}/lambda-promtail/${var.name}.zip"
+  binary_path  = "${path.module}/pkg/bootstrap"
+  archive_path = "${path.module}/${var.name}.zip"
 }
 
 resource "null_resource" "function_binary" {
@@ -200,7 +204,7 @@ resource "null_resource" "function_binary" {
 
   provisioner "local-exec" {
     command     = "GOOS=linux GOARCH=amd64 CGO_ENABLED=0 GOFLAGS=-trimpath go build -mod=readonly -ldflags='-s -w' -o bootstrap"
-    working_dir = format("%s/%s", path.module, "lambda-promtail")
+    working_dir = format("%s/%s", path.module, "pkg")
   }
 }
 
@@ -252,6 +256,8 @@ resource "aws_lambda_function" "this" {
       PRINT_LOG_LINE           = var.print_log_line
     }
   }
+
+  tags = var.common_tags
 
   depends_on = [
     aws_iam_role_policy.lambda_s3,
@@ -349,6 +355,8 @@ resource "aws_kinesis_stream" "this" {
   stream_mode_details {
     stream_mode = "PROVISIONED"
   }
+
+  tags = var.common_tags
 }
 
 resource "aws_lambda_event_source_mapping" "this" {

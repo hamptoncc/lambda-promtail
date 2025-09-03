@@ -185,3 +185,14 @@ variable "sqs_queue_name_prefix" {
   description = "Name prefix for SQS queues"
   default     = "s3-to-lambda-promtail"
 }
+
+variable "common_tags" {
+  description = "Common tags to apply to all resources"
+  type        = map(string)
+  default     = {}
+}
+variable "depends_on_resources" {
+  type        = list(any)
+  description = "List of resources this module depends on (e.g., secrets, parameters)"
+  default     = []
+}
