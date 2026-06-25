@@ -9,9 +9,11 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/backoff"
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
 	prommodel "github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/relabel"
@@ -35,6 +37,7 @@ var (
 	username, password, extraLabelsRaw, dropLabelsRaw, tenantID, bearerToken string
 	keepStream                                                               bool
 	batchSize                                                                int
+	pipelineTimeout                                                          time.Duration
 	s3Clients                                                                map[string]*s3.Client
 	extraLabels                                                              model.LabelSet
 	dropLabels                                                               []model.LabelName
@@ -112,6 +115,14 @@ func setupArguments(ctx context.Context, secretFetcher secretFetcher) {
 		batchSize, _ = strconv.Atoi(batch)
 	}
 
+	pipelineTimeout = defaultPipelineTimeout
+	timeoutStr := os.Getenv("PIPELINE_TIMEOUT")
+	if timeoutStr != "" {
+		if timeout, err := time.ParseDuration(timeoutStr); err == nil {
+			pipelineTimeout = timeout
+		}
+	}
+
 	printLogLine = true
 	if strings.EqualFold(os.Getenv("PRINT_LOG_LINE"), "false") {
 		printLogLine = false
@@ -142,7 +153,7 @@ func parseExtraLabels(extraLabelsRaw string, omitPrefix bool) (model.LabelSet, e
 	}
 	for i := 0; i < len(extraLabelsSplit); i += 2 {
 		labelName := model.LabelName(prefix + extraLabelsSplit[i])
-		if !labelName.IsValidLegacy() {
+		if !model.LegacyValidation.IsValidLabelName(string(labelName)) {
 			return nil, fmt.Errorf("invalid name %q", labelName)
 		}
 		labelValue := model.LabelValue(extraLabelsSplit[i+1])
@@ -162,7 +173,7 @@ func getDropLabels() ([]model.LabelName, error) {
 		dropLabelsRawSplit := strings.Split(dropLabelsRaw, ",")
 		for _, dropLabelRaw := range dropLabelsRawSplit {
 			dropLabel := model.LabelName(dropLabelRaw)
-			if !dropLabel.IsValidLegacy() {
+			if !model.LegacyValidation.IsValidLabelName(string(dropLabel)) {
 				return []model.LabelName{}, fmt.Errorf("invalid label name %s", dropLabelRaw)
 			}
 			result = append(result, dropLabel)
@@ -178,16 +189,13 @@ func applyRelabelConfigs(labels model.LabelSet) model.LabelSet {
 	}
 
 	// Convert model.LabelSet to prommodel.Labels
-	promLabels := make([]prommodel.Label, 0, len(labels))
+	builder := prommodel.NewScratchBuilder(len(labels))
 	for name, value := range labels {
-		promLabels = append(promLabels, prommodel.Label{
-			Name:  string(name),
-			Value: string(value),
-		})
+		builder.Add(string(name), string(value))
 	}
 
 	// Sort labels as required by Process
-	promLabels = prommodel.New(promLabels...)
+	promLabels := builder.Labels()
 
 	// Apply relabeling
 	processedLabels, keep := relabel.Process(promLabels, relabelConfigs...)
@@ -197,9 +205,9 @@ func applyRelabelConfigs(labels model.LabelSet) model.LabelSet {
 
 	// Convert back to model.LabelSet
 	result := make(model.LabelSet)
-	for _, l := range processedLabels {
+	processedLabels.Range(func(l prommodel.Label) {
 		result[model.LabelName(l.Name)] = model.LabelValue(l.Value)
-	}
+	})
 
 	return result
 }
@@ -260,6 +268,7 @@ func handler(ctx context.Context, ev map[string]interface{}) error {
 		lvl = "info"
 	}
 	log := NewLogger(lvl)
+	metrics := prometheus.NewRegistry()
 	pClient := NewPromtailClient(&promtailClientConfig{
 		backoff: &backoff.Config{
 			MinBackoff: minBackoff,
@@ -272,6 +281,11 @@ func handler(ctx context.Context, ev map[string]interface{}) error {
 		},
 	}, log)
 
+	lokiStageConfigs, err := ParsePipelineConfigs(os.Getenv("LOKI_STAGE_CONFIGS"), *log, metrics)
+	if err != nil {
+		panic(err)
+	}
+
 	event, err := checkEventType(ev)
 	if err != nil {
 		level.Error(*log).Log("err", fmt.Errorf("invalid event: %s", ev)) // nolint:errcheck
@@ -280,13 +294,13 @@ func handler(ctx context.Context, ev map[string]interface{}) error {
 
 	switch evt := event.(type) {
 	case *events.CloudWatchEvent:
-		err = processEventBridgeEvent(ctx, evt, pClient, log, processS3Event)
+		err = processEventBridgeEvent(ctx, evt, pClient, lokiStageConfigs, log, processS3Event)
 	case *events.S3Event:
-		err = processS3Event(ctx, evt, pClient, log)
+		err = processS3Event(ctx, evt, pClient, lokiStageConfigs, log)
 	case *events.CloudwatchLogsEvent:
-		err = processCWEvent(ctx, evt, pClient)
+		err = processCWEvent(ctx, evt, pClient, lokiStageConfigs)
 	case *events.KinesisEvent:
-		err = processKinesisEvent(ctx, evt, pClient)
+		err = processKinesisEvent(ctx, evt, pClient, lokiStageConfigs)
 	case *events.SQSEvent:
 		err = processSQSEvent(ctx, evt, handler)
 	case *events.SNSEvent:
