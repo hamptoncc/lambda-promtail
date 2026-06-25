@@ -60,6 +60,40 @@ func Test_getLabels(t *testing.T) {
 			wantErr: false,
 		},
 		{
+			name: "s3_alb_health_check",
+			args: args{
+				record: events.S3EventRecord{
+					AWSRegion: "us-east-2",
+					S3: events.S3Entity{
+						Bucket: events.S3Bucket{
+							Name: "elb_logs_test",
+							OwnerIdentity: events.S3UserIdentity{
+								PrincipalID: "test",
+							},
+						},
+						Object: events.S3Object{
+							Key: "my-bucket/AWSLogs/123456789012/elasticloadbalancing/us-east-2/2022/05/01/health_check_log_123456789012_elasticloadbalancing_us-east-2_app.my-loadbalancer.1234567890abcdef_20220215T2340Z_172.160.001.192_20sg8hgm.log.gz",
+						},
+					},
+				},
+			},
+			want: map[string]string{
+				"account_id":    "123456789012",
+				"bucket":        "elb_logs_test",
+				"bucket_owner":  "test",
+				"bucket_region": "us-east-2",
+				"day":           "01",
+				"key":           "my-bucket/AWSLogs/123456789012/elasticloadbalancing/us-east-2/2022/05/01/health_check_log_123456789012_elasticloadbalancing_us-east-2_app.my-loadbalancer.1234567890abcdef_20220215T2340Z_172.160.001.192_20sg8hgm.log.gz",
+				"month":         "05",
+				"region":        "us-east-2",
+				"lb_type":       LbAlbType,
+				"src":           "my-loadbalancer",
+				"type":          LbLogType,
+				"year":          "2022",
+			},
+			wantErr: false,
+		},
+		{
 			name: "s3_nlb",
 			args: args{
 				record: events.S3EventRecord{
@@ -122,6 +156,39 @@ func Test_getLabels(t *testing.T) {
 				"region":        "us-east-1",
 				"type":          GuardDutyLogType,
 				"year":          "2024",
+			},
+			wantErr: false,
+		},
+		{
+			name: "s3_access",
+			args: args{
+				record: events.S3EventRecord{
+					AWSRegion: "us-east-1",
+					S3: events.S3Entity{
+						Bucket: events.S3Bucket{
+							Name: "s3_access_test",
+							OwnerIdentity: events.S3UserIdentity{
+								PrincipalID: "test",
+							},
+						},
+						Object: events.S3Object{
+							Key: "123456789012/us-east-1/amzn-s3-demo-source-bucket/2023/03/01/2023-03-01-21-32-16-E568B2907131C0C0",
+						},
+					},
+				},
+			},
+			want: map[string]string{
+				"account_id":    "123456789012",
+				"bucket":        "s3_access_test",
+				"bucket_owner":  "test",
+				"bucket_region": "us-east-1",
+				"day":           "01",
+				"key":           "123456789012/us-east-1/amzn-s3-demo-source-bucket/2023/03/01/2023-03-01-21-32-16-E568B2907131C0C0",
+				"month":         "03",
+				"region":        "us-east-1",
+				"src":           "amzn-s3-demo-source-bucket",
+				"type":          S3AccessLogType,
+				"year":          "2023",
 			},
 			wantErr: false,
 		},
@@ -357,6 +424,73 @@ func Test_getLabels(t *testing.T) {
 			wantErr: false,
 		},
 		{
+			name: "s3_url_encoded_1",
+			args: args{
+				record: events.S3EventRecord{
+					AWSRegion: "us-east-1",
+					S3: events.S3Entity{
+						Bucket: events.S3Bucket{
+							Name: "cloudfront_logs_test",
+							OwnerIdentity: events.S3UserIdentity{
+								PrincipalID: "test",
+							},
+						},
+						Object: events.S3Object{
+							Key: "my/bucket/my%2Dprefix/E2K2LNL5N3WR51.2022-07-18-12.a10a8496.gz",
+						},
+					},
+				},
+			},
+			want: map[string]string{
+				"bucket":        "cloudfront_logs_test",
+				"bucket_owner":  "test",
+				"bucket_region": "us-east-1",
+				"day":           "18",
+				"key":           "my/bucket/my-prefix/E2K2LNL5N3WR51.2022-07-18-12.a10a8496.gz",
+				"month":         "07",
+				"prefix":        "my/bucket/my-prefix",
+				"src":           "E2K2LNL5N3WR51",
+				"type":          CloudFrontLogType,
+				"year":          "2022",
+			},
+			wantErr: false,
+		},
+		{
+			name: "s3_url_encoded_2",
+			args: args{
+				record: events.S3EventRecord{
+					AWSRegion: "us-east-1",
+					S3: events.S3Entity{
+						Bucket: events.S3Bucket{
+							Name: "waf_logs_test",
+							OwnerIdentity: events.S3UserIdentity{
+								PrincipalID: "test",
+							},
+						},
+						Object: events.S3Object{
+							Key: "my+prefix/AWSLogs/11111111111/WAFLogs/us-east-1/TEST-WEBACL/2021/10/28/19/50/11111111111_waflogs_us-east-1_TEST-WEBACL_20211028T1950Z_e0ca43b5.log.gz",
+						},
+					},
+				},
+			},
+			want: map[string]string{
+				"account_id":    "11111111111",
+				"bucket_owner":  "test",
+				"bucket_region": "us-east-1",
+				"bucket":        "waf_logs_test",
+				"day":           "28",
+				"hour":          "19",
+				"key":           "my prefix/AWSLogs/11111111111/WAFLogs/us-east-1/TEST-WEBACL/2021/10/28/19/50/11111111111_waflogs_us-east-1_TEST-WEBACL_20211028T1950Z_e0ca43b5.log.gz",
+				"minute":        "50",
+				"month":         "10",
+				"region":        "us-east-1",
+				"src":           "TEST-WEBACL",
+				"type":          WafLogType,
+				"year":          "2021",
+			},
+			wantErr: false,
+		},
+		{
 			name: "s3_waf",
 			args: args{
 				record: events.S3EventRecord{
@@ -427,6 +561,44 @@ func Test_getLabels(t *testing.T) {
 			wantErr: false,
 		},
 		{
+			name: "s3_msk",
+			args: args{
+				record: events.S3EventRecord{
+					AWSRegion: "eu-south-2",
+					S3: events.S3Entity{
+						Bucket: events.S3Bucket{
+							Name: "msk_logs_test",
+							OwnerIdentity: events.S3UserIdentity{
+								PrincipalID: "test",
+							},
+						},
+						Object: events.S3Object{
+							Key: "prefix/AWSLogs/111111111111/KafkaBrokerLogs/eu-south-2/msk-test-name-7f6b9b77-24f9-4921-87b6-d29a6401e292-3/2025-07-04-11/Broker-1_11-55_cab960bb.log.gz",
+						},
+					},
+				},
+			},
+			want: map[string]string{
+				"account_id":    "111111111111",
+				"broker_id":     "1",
+				"bucket":        "msk_logs_test",
+				"bucket_owner":  "test",
+				"bucket_region": "eu-south-2",
+				"cluster_name":  "msk-test-name-7f6b9b77-24f9-4921-87b6-d29a6401e292",
+				"cluster_uuid":  "3",
+				"day":           "04",
+				"hour":          "11",
+				"key":           "prefix/AWSLogs/111111111111/KafkaBrokerLogs/eu-south-2/msk-test-name-7f6b9b77-24f9-4921-87b6-d29a6401e292-3/2025-07-04-11/Broker-1_11-55_cab960bb.log.gz",
+				"log_hour":      "11",
+				"log_minute":    "55",
+				"month":         "07",
+				"region":        "eu-south-2",
+				"type":          MskLogType,
+				"year":          "2025",
+			},
+			wantErr: false,
+		},
+		{
 			name: "missing_type",
 			args: args{
 				record: events.S3EventRecord{
@@ -475,6 +647,7 @@ func Test_parseS3Log(t *testing.T) {
 		filename  string
 		batchSize int
 	}
+	process, _ := ParsePipelineConfigs("", nil, nil)
 	tests := []struct {
 		name               string
 		args               args
@@ -490,7 +663,8 @@ func Test_parseS3Log(t *testing.T) {
 				batchSize: 1024, // Set large enough we don't try and send to promtail
 				filename:  "../testdata/vpcflowlog.log.gz",
 				b: &batch{
-					streams: map[string]*logproto.Stream{},
+					streams:   map[string]*logproto.Stream{},
+					processor: process,
 				},
 				labels: map[string]string{
 					"type":       FlowLogType,
@@ -508,7 +682,8 @@ func Test_parseS3Log(t *testing.T) {
 				batchSize: 1024, // Set large enough we don't try and send to promtail
 				filename:  "../testdata/albaccesslog.log.gz",
 				b: &batch{
-					streams: map[string]*logproto.Stream{},
+					streams:   map[string]*logproto.Stream{},
+					processor: process,
 				},
 				labels: map[string]string{
 					"type":       LbLogType,
@@ -530,7 +705,8 @@ func Test_parseS3Log(t *testing.T) {
 				batchSize: 1024, // Set large enough we don't try and send to promtail
 				filename:  "../testdata/nlbaccesslog.log.gz",
 				b: &batch{
-					streams: map[string]*logproto.Stream{},
+					streams:   map[string]*logproto.Stream{},
+					processor: process,
 				},
 				labels: map[string]string{
 					"account_id": "123456789",
@@ -557,7 +733,8 @@ func Test_parseS3Log(t *testing.T) {
 				batchSize: 131072, // Set large enough we don't try and send to promtail
 				filename:  "../testdata/cloudtrail-log-file.json.gz",
 				b: &batch{
-					streams: map[string]*logproto.Stream{},
+					streams:   map[string]*logproto.Stream{},
+					processor: process,
 				},
 				labels: map[string]string{
 					"type":       CloudTrailLogType,
@@ -579,7 +756,8 @@ func Test_parseS3Log(t *testing.T) {
 				batchSize: 131072, // Set large enough we don't try and send to promtail
 				filename:  "../testdata/cloudtrail-log-file.json.gz",
 				b: &batch{
-					streams: map[string]*logproto.Stream{},
+					streams:   map[string]*logproto.Stream{},
+					processor: process,
 				},
 				labels: map[string]string{
 					"type":       CloudTrailDigestLogType,
@@ -597,7 +775,8 @@ func Test_parseS3Log(t *testing.T) {
 				batchSize: 131072, // Set large enough we don't try and send to promtail
 				filename:  "../testdata/cloudfront.log.gz",
 				b: &batch{
-					streams: map[string]*logproto.Stream{},
+					streams:   map[string]*logproto.Stream{},
+					processor: process,
 				},
 				labels: map[string]string{
 					"type":   CloudFrontLogType,
@@ -619,7 +798,8 @@ func Test_parseS3Log(t *testing.T) {
 				batchSize: 131072, // Set large enough we don't try and send to promtail
 				filename:  "../testdata/waflog.log.gz",
 				b: &batch{
-					streams: map[string]*logproto.Stream{},
+					streams:   map[string]*logproto.Stream{},
+					processor: process,
 				},
 				labels: map[string]string{
 					"account_id": "11111111111",
@@ -635,12 +815,58 @@ func Test_parseS3Log(t *testing.T) {
 			wantErr: false,
 		},
 		{
+			name: "msklogs",
+			args: args{
+				batchSize: 1024,
+				filename:  "../testdata/msklog.log.gz",
+				b: &batch{
+					streams:   map[string]*logproto.Stream{},
+					processor: process,
+				},
+				labels: map[string]string{
+					"type":       MskLogType,
+					"src":        "msk-test-name-7f6b9b77-24f9-4921-87b6-d29a6401e292-3",
+					"account_id": "111111111111",
+				},
+			},
+			expectedLen:    1,
+			expectedStream: `{__aws_log_type="s3_msk", __aws_s3_msk="msk-test-name-7f6b9b77-24f9-4921-87b6-d29a6401e292-3", __aws_s3_msk_owner="111111111111"}`,
+			expectedTimestamps: []time.Time{
+				time.Date(2025, time.July, 4, 11, 57, 55, 836000000, time.UTC),
+				time.Date(2025, time.July, 4, 11, 57, 55, 839000000, time.UTC),
+			},
+			wantErr: false,
+		},
+		{
+			name: "s3_access",
+			args: args{
+				batchSize: 131072, // Set large enough we don't try and send to promtail
+				filename:  "../testdata/s3accesslog.log",
+				b: &batch{
+					streams:   map[string]*logproto.Stream{},
+					processor: process,
+				},
+				labels: map[string]string{
+					"account_id": "123456789012",
+					"src":        "amzn-s3-demo-bucket1",
+					"type":       S3AccessLogType,
+				},
+			},
+			expectedLen:    1,
+			expectedStream: `{__aws_log_type="s3_access", __aws_s3_access="amzn-s3-demo-bucket1", __aws_s3_access_owner="123456789012"}`,
+			expectedTimestamps: []time.Time{
+				time.Date(2019, time.February, 6, 0, 0, 38, 0, time.UTC),
+			},
+			wantErr: false,
+		},
+		{
 			name: "missing_parser",
 			args: args{
 				batchSize: 131072, // Set large enough we don't try and send to promtail
 				filename:  "../testdata/kinesis-event.json",
 				b: &batch{
-					streams: map[string]*logproto.Stream{},
+					streams:   map[string]*logproto.Stream{},
+					processor: process,
 				},
 				labels: map[string]string{
 					"bucket":        "missing_parser",
@@ -660,7 +886,8 @@ func Test_parseS3Log(t *testing.T) {
 				batchSize: 131072, // Set large enough we don't try and send to promtail
 				filename:  "../testdata/waflog.log.gz",
 				b: &batch{
-					streams: map[string]*logproto.Stream{},
+					streams:   map[string]*logproto.Stream{},
+					processor: process,
 				},
 				labels: map[string]string{
 					"account_id": "11111111111",
@@ -688,6 +915,7 @@ func Test_parseS3Log(t *testing.T) {
 			if err != nil {
 				t.Errorf("parseS3Log() failed to open test file: %s - %v", tt.args.filename, err)
 			}
+			defer tt.args.obj.Close()
 			buf := &bytes.Buffer{}
 			log := log.NewLogfmtLogger(buf)
 			if err := parseS3Log(context.Background(), tt.args.b, tt.args.labels, tt.args.obj, &log); (err != nil) != tt.wantErr {
